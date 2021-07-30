@@ -1,7 +1,9 @@
-const handleSignIn = (db, bcrypt) => async (req, res) => {
+const jwt = require('jsonwebtoken')
+
+const handleSignIn = async (db, bcrypt, req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
-        return res.status(400).json('incorrect form submission');
+        return Promise.reject('incorrect form submission');
     }
 
     try {
@@ -9,23 +11,74 @@ const handleSignIn = (db, bcrypt) => async (req, res) => {
             await db.select('email', 'hash')
             .from('login')
             .where('email', '=', email);
-        
         const isValid = await bcrypt.compare(password, dbPass[0].hash);
-        
         if (isValid) {
-            db.select('*').from('users')
+            return db.select('*').from('users')
                 .where('email', '=', email)
-                .then(user => {
-                    res.json(user[0])
-                })
-                .catch(error => res.status(400).json('Unable to get user'));
+                .then(user => user[0])
+                .catch(error => Promise.reject('Unable to get user'));
         } else {
-            res.status(400).json('Invalid credentials');
+            Promise.reject('Invalid credentials');
         }
     } catch {
-        res.status(400).json('Invalid credentials');
+        Promise.reject('Invalid credentials');
     }
     
 }
 
-module.exports = {handleSignIn}
+const getAuthTokenEmail = (req, res, db) => {
+    const { authorization } = req.headers;
+    return db.select('*').from('session').where('session', '=', authorization)
+        .then(result => {
+            if (result.length === 0) {
+                return res.status(400).json('Unauthorized')
+            }
+            return res.json({ email: result[0].email });
+        })
+}
+
+const signToken = (email) => {
+    const jwtPayload = { email };
+    return jwt.sign(jwtPayload, 'lbuddy', { expiresIn: '2 days' });
+}
+
+const setToken = async (email, session, db) => {
+    try {
+        await db('session').insert({
+                email: email,
+                session: session
+            })
+            .onConflict('email')
+            .merge()
+        return Promise.resolve('Successful insert');
+    } catch (err) {
+        console.log(err);
+        return Promise.reject('Unsuccessful insert');
+    }
+    
+}
+
+const createSession = (user, db) => {
+    const { email } = user;
+    const token = signToken(email);
+    return setToken(email, token, db)
+        .then(() => {
+            return { success: 'true', email: email, token }
+        })
+}
+
+const handleAuthentication = (db, bcrypt) => (req, res) => {
+    const { authorization } = req.headers;
+
+    return authorization ? getAuthTokenEmail(req, res, db) :
+        handleSignIn(db, bcrypt, req, res)
+            .then(data => {
+                return data.email ? createSession(data, db) : Promise.reject('');
+            })
+            .then(session => {
+                res.json(session)
+            })
+            .catch(err => res.status(400).json(err));
+}
+
+module.exports = {handleAuthentication}
