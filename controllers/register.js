@@ -1,16 +1,20 @@
 const handleRegister = (db, bcrypt, saltRounds) => async (req, res) => {
     const trx = await db.transaction();
-    let { first_name, last_name, email, password, group_id } = req.body;
-    if (!first_name || !last_name || !email || !password || !group_id) {
+    let { email, fullName, birthdate, gender, education, job, yearJoined, groupID, password } = req.body;
+    if (!email || !fullName || !birthdate || !gender || !education || !job || !yearJoined || !groupID || !password) {
         return res.status(400).json('incorrect form submission');
     }
     const hash = await bcrypt.hash(password, saltRounds);
 
     const newUser = {
         email: email,
-        first_name: first_name,
-        last_name: last_name,
-        group_id: group_id,
+        full_name: fullName,
+        birthdate: birthdate,
+        gender: gender,
+        education: education,
+        job: job,
+        group_id: groupID,
+        year_joined: yearJoined,
         joined: new Date()
     }   
     
